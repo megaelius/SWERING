@@ -6,45 +6,88 @@ output: html_notebook
 
 ```{r}
 library("readxl")
-x <- read_excel("./kcmillersean-billboard-hot-100-1958-2017/original/Hot 100 Audio Features.xlsx")
+x_raw <- read_excel("./kcmillersean-billboard-hot-100-1958-2017/original/Hot 100 Audio Features.xlsx")
+sum(is.na(x_raw$spotify_track_explicit))
+x_raw
+```
+We eliminate the rows where the target variable is missing.
+
+```{r}
+billboard <- read.csv("./kcmillersean-billboard-hot-100-1958-2017/original/Hot Stuff.csv",header = TRUE)
+billboard
+```
+
+
+```{r}
+x_full <- x_raw[!is.na(x_raw$danceability),]
+x_full  <- x_full[!is.na(x_full$spotify_track_explicit),]
+sum(is.na(x_full$spotify_track_explicit))
+x_full
 ```
 
 ```{r}
+explicit <- x_full$spotify_track_explicit
+x <- x_full[,c(9:22)] 
 x
+sum(is.na(x))
 ```
+We have to see what to do with mode and time_signature.
 
 ```{r}
 dim(x)
 ```
 
 ```{r}
-apply(x[x$spotify_track_explicit == TRUE,9:22],2,mean,na.rm = TRUE)
+pairs(x[,1:6],col = ifelse(explicit,"red","blue"))
 ```
 
 ```{r}
-apply(x[x$spotify_track_explicit == FALSE,9:22],2,mean,na.rm = TRUE)
+C <-cor(x)
+C
+```
+
+```{r}
+for(i in 1 : (nrow(C) - 1)) {
+  for(j in (i + 1) : ncol(C)) {
+    if(abs(C[i, j]) >= 0.5) print(paste0(rownames(C)[i], " - ", colnames(C)[j]))
+  }
+}
+```
+
+
+
+```{r}
+apply(x[explicit == TRUE,],2,mean)
+```
+
+```{r}
+apply(x[explicit == FALSE,],2,mean)
 ```
 ```{r}
-sum(x$spotify_track_explicit == FALSE,na.rm = TRUE)
-sum(x$spotify_track_explicit == TRUE,na.rm = TRUE)
+sum(explicit == FALSE)
+sum(explicit == TRUE)
 ```
 ```{r}
-hist(x$loudness[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.2))
-hist(x$loudness[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.2))
+hist(x$loudness[explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.2))
+hist(x$loudness[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.2))
 
 
 ```
 
 ```{r}
-hist(x$speechiness[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green")
-hist(x$speechiness[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
+hist(x$speechiness[explicit == FALSE],freq = FALSE,border = "green")
+hist(x$speechiness[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
 ```
 ```{r}
-hist(x$danceability[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green")
-hist(x$danceability[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
+hist(x$danceability[explicit == FALSE],freq = FALSE,border = "green")
+hist(x$danceability[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
 ```
 ```{r}
-hist(x$spotify_track_popularity[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.05))
-hist(x$spotify_track_popularity[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.05))
+hist(x$spotify_track_popularity[explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.05))
+hist(x$spotify_track_popularity[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.05))
+```
+```{r}
+hist(x$valence[explicit == FALSE],freq = FALSE,border = "green")
+hist(x$valence[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
 ```
 
