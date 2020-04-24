@@ -98,8 +98,8 @@ hist(x$danceability[explicit == FALSE],freq = FALSE,border = "green")
 hist(x$danceability[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
 ```
 ```{r}
-hist(x$spotify_track_popularity[explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.05))
-hist(x$spotify_track_popularity[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.05))
+hist(x$popularity[explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.05))
+hist(x$popularity[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.05))
 ```
 ```{r}
 hist(x$valence[explicit == FALSE],freq = FALSE,border = "green")
@@ -161,7 +161,7 @@ ara ens falta fer learn + test i cross validation
 ```{r}
 g = function(prior,S_inv,mu,x){
   x = t(as.matrix(x))
-  g = log(prior) - log((2*pi)^(ncol(S)/2)) -1/2*t(x-mu) %*% S_inv %*% (x-mu)
+  g = log(prior) - log((2*pi)^(ncol(S_inv)/2)) -1/2*t(x-mu) %*% S_inv %*% (x-mu)
   return(g)
 }
 
