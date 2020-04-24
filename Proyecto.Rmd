@@ -88,6 +88,6 @@ hist(x$spotify_track_popularity[explicit == TRUE],freq = FALSE,add  = TRUE,borde
 ```
 ```{r}
 hist(x$valence[explicit == FALSE],freq = FALSE,border = "green")
-hist(x$valence[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
+hist(x$valence[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red") 
 ```
 
