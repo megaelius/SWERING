@@ -1,0 +1,50 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library("readxl")
+x <- read_excel("./kcmillersean-billboard-hot-100-1958-2017/original/Hot 100 Audio Features.xlsx")
+```
+
+```{r}
+x
+```
+
+```{r}
+dim(x)
+```
+
+```{r}
+apply(x[x$spotify_track_explicit == TRUE,9:22],2,mean,na.rm = TRUE)
+```
+
+```{r}
+apply(x[x$spotify_track_explicit == FALSE,9:22],2,mean,na.rm = TRUE)
+```
+```{r}
+sum(x$spotify_track_explicit == FALSE,na.rm = TRUE)
+sum(x$spotify_track_explicit == TRUE,na.rm = TRUE)
+```
+```{r}
+hist(x$loudness[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.2))
+hist(x$loudness[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.2))
+
+
+```
+
+```{r}
+hist(x$speechiness[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green")
+hist(x$speechiness[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
+```
+```{r}
+hist(x$danceability[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green")
+hist(x$danceability[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
+```
+```{r}
+hist(x$spotify_track_popularity[x$spotify_track_explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.05))
+hist(x$spotify_track_popularity[x$spotify_track_explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.05))
+```
+
