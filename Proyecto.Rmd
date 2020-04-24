@@ -28,6 +28,8 @@ x_full
 ```{r}
 explicit <- x_full$spotify_track_explicit
 x <- x_full[,c(9:22)] 
+colnames(x)[1]<-"duration"
+colnames(x)[2]<-"popularity"
 x
 sum(is.na(x))
 ```
@@ -38,7 +40,7 @@ dim(x)
 ```
 
 ```{r}
-pairs(x[,1:6],col = ifelse(explicit,"red","blue"))
+# pairs(x[,1:6],col = ifelse(explicit,"red","blue"))
 ```
 
 ```{r}
@@ -57,12 +59,25 @@ for(i in 1 : (nrow(C) - 1)) {
 
 
 ```{r}
-apply(x[explicit == TRUE,],2,mean)
+mu_exp = as.matrix(apply(x[explicit == TRUE,],2,mean))
+mu_exp
 ```
 
 ```{r}
-apply(x[explicit == FALSE,],2,mean)
+mu_nexp = as.matrix(apply(x[explicit == FALSE,],2,mean))
+mu_nexp
 ```
+
+```{r}
+apply(x[explicit == TRUE,],2,var)
+```
+
+```{r}
+apply(x[explicit == FALSE,],2,var)
+```
+
+Asumim que les variancies son diferents (s'hauria de fer box m test)
+
 ```{r}
 sum(explicit == FALSE)
 sum(explicit == TRUE)
@@ -90,4 +105,76 @@ hist(x$spotify_track_popularity[explicit == TRUE],freq = FALSE,add  = TRUE,borde
 hist(x$valence[explicit == FALSE],freq = FALSE,border = "green")
 hist(x$valence[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red") 
 ```
+
+
+```{r}
+set.seed(123)
+xstd = scale(x,scale = TRUE)
+c = sample(1:nrow(xstd),1000)
+D = dist(xstd[c,])
+```
+
+
+
+```{r}
+hc.ward <- hclust(D,method="ward.D2")
+plot(hc.ward,ylab="Distance",main="single linkage (weighted Euclidean)",
+xlab="",hang=-1,las=1,cex.main=1)
+clusters <- cutree(hc.ward, 2)
+table(clusters,explicit[c])
+```
+
+```{r}
+# LDA
+library(MASS)
+out <- lda(explicit~.,data=x)
+plot(out)
+```
+
+
+```{r}
+# PCA no separa
+pca = princomp(x[c,],cor=TRUE)
+plot(pca$scores[,1],pca$scores[,2],col = ifelse(explicit,"red","blue"),asp = 1)
+```
+
+
+## Classificació
+
+```{r}
+# Creem el dichotomizer
+# Primer creem les funcions discriminants
+prior_exp = sum(explicit == TRUE)/nrow(x)
+prior_nexp = sum(explicit == FALSE)/nrow(x)
+S_exp = cov(x[explicit == TRUE,])
+S_nexp = cov(x[explicit == FALSE,])
+S_exp_inv = solve(S_exp)
+S_nexp_inv = solve(S_nexp)
+prior_exp
+prior_nexp
+```
+
+
+
+ara ens falta fer learn + test i cross validation
+
+```{r}
+g = function(prior,S_inv,mu,x){
+  x = t(as.matrix(x))
+  g = log(prior) - log((2*pi)^(ncol(S)/2)) -1/2*t(x-mu) %*% S_inv %*% (x-mu)
+  return(g)
+}
+
+mal = 0
+for (i in 1:nrow(x)){
+    dico = g(prior_exp,S_exp_inv,mu_exp,x[1,])-g(prior_nexp,S_nexp_inv,mu_nexp,x[1,])
+    if ((dico < 0 && explicit[i]) || (dico > 0 && !explicit[i])) mal = mal + 1
+}
+mal/nrow(x)*100 # percentatge errors
+```
+
+
+
+
+
 
