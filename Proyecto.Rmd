@@ -6,6 +6,7 @@ output: html_notebook
 
 ```{r}
 library("readxl")
+library("class")
 x_raw <- read_excel("./kcmillersean-billboard-hot-100-1958-2017/original/Hot 100 Audio Features.xlsx")
 sum(is.na(x_raw$spotify_track_explicit))
 x_raw
@@ -111,13 +112,14 @@ hist(x$valence[explicit == FALSE],freq = FALSE,border = "green")
 hist(x$valence[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red") 
 ```
 
+Fem un ànalisi cluster
+
 ```{r}
 set.seed(123)
 xstd = scale(x,scale = TRUE)
 c = sample(1:nrow(xstd),1000)
 D = dist(xstd[c,])
 ```
-
 
 
 ```{r}
@@ -127,6 +129,8 @@ xlab="",hang=-1,las=1,cex.main=1)
 clusters <- cutree(hc.ward, 2)
 table(clusters,explicit[c])
 ```
+
+Fem un ànalisi lda i veiem l'output de una primera classificació
 
 ```{r}
 # LDA
@@ -141,7 +145,6 @@ plot(out)
 pca = princomp(x[c,],cor=TRUE)
 plot(pca$scores[,1],pca$scores[,2],col = ifelse(explicit,"red","blue"),asp = 1)
 ```
-
 
 ## Classificació
 
@@ -158,7 +161,7 @@ dichotomizer = function(xx,prior_exp,prior_nexp,S_exp_inv,S_nexp_inv,mu_exp,mu_n
     class = rep(0, nrow(xx))
     for (i in 1:nrow(xx)){
         dico = g(prior_exp,S_exp_inv,mu_exp,xx[i,])-g(prior_nexp,S_nexp_inv,mu_nexp,xx[i,])
-        if (dico > 0)class(i) = 1 
+        if (dico > 0) class[i] = 1 
     }
     return(class)
 } 
@@ -177,6 +180,8 @@ Error = function(y_true,y_pred,n){
 }
 ```
 
+Definim els datasets de Learn i Test a partir del dataset inicial
+
 ```{r}
 set.seed (4321)
 N <- nrow(x)
@@ -187,10 +192,32 @@ xtest = x[-learn,]
 ytest = explicit[-learn]
 ```
 
+Escollim quina és la millor k
+
 ```{r}
+# 88 = round(sqrt(nrow(xtest)))
+c = rep(0,88)
+i=1
+while (i < 88){
+  nn = knn(scale(xl),scale(xtest),as.factor(yl),k=i)
+  sum(nn == "TRUE")
+  c[i] = Error(ytest,as.logical(nn),nrow(xtest))
+  i = i + 2
+  }
+which(c == min(c[c!=0]))
+```
+
+La millor k és k=11
+
+# Cross Validation
+
+Fem la 10-fold Cross-Validation per escollir el millor model
+
+```{r}
+library(MLmetrics)
 k=10
-acum_error0 = 0
-acum_error1 = 0
+error = matrix(, nrow = 3, ncol = 10)
+f1 = matrix(, nrow = 3, ncol = 10)
 fold_size = nrow(xl) %/% k
 for (i in 1:k){
     #Definim els talls que definiran els folds
@@ -215,28 +242,59 @@ for (i in 1:k){
     S_exp_inv = solve(S_exp)
     S_nexp_inv = solve(S_nexp)
     prediction0 = dichotomizer(xvalidation,prior_exp,prior_nexp,S_exp_inv,S_nexp_inv,mu_exp,mu_nexp)
-    acum_error0 = acum_error0 + Error(as.numeric(yvalidation),prediction0,nrow(xvalidation))
+    error[1,i] =  Error(as.numeric(yvalidation),prediction0,nrow(xvalidation))
+    f1[1,i] = F1_Score(as.numeric(yvalidation),prediction0)
     
     #Model1: glm with binomial family
     mod1 <- glm(ytraining ~ ., data=as.data.frame(xtraining),family=binomial)
     prediction1 = round(predict(mod1,ty="response",
     newdata = as.data.frame(xvalidation)))
-    acum_error1 = acum_error1 + Error(as.numeric(yvalidation),prediction1,nrow(xvalidation))
+    error[2,i] = Error(as.numeric(yvalidation),prediction1,nrow(xvalidation))
+    f1[2,i] = F1_Score(as.numeric(yvalidation),prediction1)
+    
+    #Model2: knn
+    k_knn = 11 #escollida a fora
+    nn = knn(scale(xtraining),scale(xvalidation),as.factor(ytraining),k=k_knn)
+    error[3,i] = Error(yvalidation,as.logical(nn),nrow(xvalidation))
+    f1[3,i] = F1_Score(as.numeric(yvalidation),as.numeric(as.logical(nn)))
 }
-error0 = acum_error0/k
-error1 = acum_error1/k
+
+error0 = mean(error[1,])
+error1 = mean(error[2,])
+error2 = mean(error[3,])
+f1_0 = mean(f1[1,])
+f1_1 = mean(f1[2,])
+f1_2 = mean(f1[3,])
 error0
 error1
+error2
+f1_0
+f1_1
+f1_2
 ```
 
+Calculem les variàncies des errors
+
 ```{r}
+vars_errors = apply(error,1,var)
+var_f1 = apply(f1,1,var)
+vars_errors
+var_f1
+```
+
+Sembla que el millor és el knn però per molt poc. També és el que té millor variància
+
+Ara reentrenem per tot el dataset de learn
+
+```{r}
+# glm
 mod <- glm(yl~.,data = as.data.frame(xl),family=binomial(link = "logit"))
-library(MLmetrics)
 pred = round(predict.glm(mod,type = "response",newdata = as.data.frame(xtest)))
 F1_Score(as.numeric(ytest),pred)
 ```
 
 ```{r}
+# dichotomizer
 prior_exp = sum(yl == TRUE)/nrow(xl)
 prior_nexp = 1 - prior_exp
 S_exp = cov(xl[yl == TRUE,])
@@ -245,11 +303,13 @@ S_exp_inv = solve(S_exp)
 S_nexp_inv = solve(S_nexp)
 pred_dico = as.data.frame(dichotomizer(xtest,prior_exp,prior_nexp,S_exp_inv,S_nexp_inv,mu_exp,mu_nexp))
 F1_Score(as.numeric(ytest),pred_dico[,1],positive = 0)
-
 ```
 
-
-
+```{r}
+# 11-nn
+nn = knn(scale(xl),scale(xtest),as.factor(yl),k=11)
+F1_Score(as.numeric(ytest),as.numeric(as.logical(nn)))
+```
 
 
 
