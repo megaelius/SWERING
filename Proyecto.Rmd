@@ -289,8 +289,8 @@ Ara reentrenem per tot el dataset de learn
 ```{r}
 # glm
 mod <- glm(yl~.,data = as.data.frame(xl),family=binomial(link = "logit"))
-pred = round(predict.glm(mod,type = "response",newdata = as.data.frame(xtest)))
-F1_Score(as.numeric(ytest),pred)
+pred_glm = round(predict.glm(mod,type = "response",newdata = as.data.frame(xtest)))
+F1_Score(as.numeric(ytest),pred_glm)
 ```
 
 ```{r}
@@ -308,7 +308,40 @@ F1_Score(as.numeric(ytest),pred_dico[,1],positive = 0)
 ```{r}
 # 11-nn
 nn = knn(scale(xl),scale(xtest),as.factor(yl),k=11)
-F1_Score(as.numeric(ytest),as.numeric(as.logical(nn)))
+pred_nn = as.numeric(as.logical(nn))
+F1_Score(as.numeric(ytest),pred_nn)
+```
+
+```{r}
+t.test(error[1,],error[2,])
+```
+```{r}
+t.test(error[1,],error[3,])
+```
+
+```{r}
+t.test(error[2,],error[3,])
+```
+
+```{r}
+index = c()
+for (i in 1:nrow(xtest)){
+  if(pred_nn[i] != explicit[i] && pred_glm[i] != explicit[i] && pred_dico[i] != explicit[i]){
+    index = c(index,i)
+  }
+}
+```
+
+
+```{r}
+library(MASS)
+library(nnet)
+library(caret)
+trc <- trainControl (method="repeatedcv", number=10, repeats=1)
+decays <- 10^seq(-2, 0, by=0.2)
+model.10x10CV <- train (as.factor(explicit) ~., data = x, subset=learn, method='nnet', 
+                        maxit = 100, trace = FALSE,
+                        tuneGrid = expand.grid(.size=20,.decay=decays), trControl=trc)
 ```
 
 
