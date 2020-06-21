@@ -377,27 +377,6 @@ t.test(error[1,],error[3,])
 t.test(error[2,],error[3,])
 ```
 
-```{r}
-index = c()
-for (i in 1:nrow(xtest)){
-  if(pred_nn[i] != explicit[i] && pred_glm[i] != explicit[i] && pred_dico[i] != explicit[i]){
-    index = c(index,i)
-  }
-}
-```
-
-
-```{r}
-library(MASS)
-library(nnet)
-library(caret)
-trc <- trainControl (method="repeatedcv", number=10, repeats=1)
-decays <- 10^seq(-2, 0, by=0.2)
-model.10x10CV <- train (as.factor(explicit) ~., data = x, subset=learn, method='nnet', 
-                        maxit = 100, trace = FALSE,
-                        tuneGrid = expand.grid(.size=20,.decay=decays), trControl=trc)
-```
-
 Quines cançons estan mal calssificades per tots els models
 
 ```{r}
