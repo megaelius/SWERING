@@ -63,7 +63,6 @@ for(i in 1 : (nrow(C) - 1)) {
 ```
 
 
-
 ```{r}
 mu_exp = as.matrix(apply(x[explicit == TRUE,],2,mean))
 mu_exp
@@ -207,6 +206,41 @@ while (i < 88){
 which(c == min(c[c!=0]))
 ```
 
+```{r}
+errors <- function (model)
+{
+  options(digits=4)
+  p1 <- as.factor(predict (model, type="class"))
+  t1 <- table(p1,explicit[learn])
+  cat ("Train = ", 100*(1-sum(diag(t1))/length(explicit[learn])),"%\n")
+  p2 <- as.factor(predict (model, newdata=xtest, type="class"))
+  t2 <- table(p2,explicit[-learn])
+  cat ("Test =  ", 100*(1-sum(diag(t2))/length(explicit[-learn])),"%\n")
+}
+```
+
+
+```{r}
+set.seed(1234)
+library(MASS)
+library(nnet)
+# model.nnet <- nnet(explicit ~., data = x, entropy = TRUE, softmax = FALSE, linout = FALSE, subset=learn, size=10, maxit=500, decay=0.5)
+library(caret)
+
+trc <- trainControl (method="repeatedcv", number=2, repeats=2)
+model.10x10CV <- train (as.factor(explicit) ~., data = x, subset=learn, method='nnet', 
+                        maxit = 100, trace = FALSE,
+                        tuneGrid = expand.grid(.size=20,.decay=decays), trControl=trc)
+```
+
+
+```{r}
+# 2561.270023
+errors (model.nnet)
+```
+
+
+
 La millor k és k=11
 
 # Cross Validation
@@ -216,7 +250,7 @@ Fem la 10-fold Cross-Validation per escollir el millor model
 ```{r}
 library(MLmetrics)
 k=10
-error = matrix(, nrow = 3, ncol = 10)
+error = matrix(, nrow = 4, ncol = 10)
 f1 = matrix(, nrow = 3, ncol = 10)
 fold_size = nrow(xl) %/% k
 for (i in 1:k){
@@ -257,21 +291,41 @@ for (i in 1:k){
     nn = knn(scale(xtraining),scale(xvalidation),as.factor(ytraining),k=k_knn)
     error[3,i] = Error(yvalidation,as.logical(nn),nrow(xvalidation))
     f1[3,i] = F1_Score(as.numeric(yvalidation),as.numeric(as.logical(nn)))
-}
+    
+    #Model3: MLP neural network
+    set.seed(1234)
+    mod3 <- nnet(ytraining ~., data = xtraining, entropy = TRUE, softmax = FALSE, linout = FALSE, size=10, maxit=500, decay=0.5)
+    options(digits=4)
+    pred3 = round(predict(mod3,ty="raw",
+    newdata = as.data.frame(xvalidation)))
+    error[4,i] = Error(as.numeric(yvalidation),pred3,nrow(xvalidation))
+    # f1[4,i] = F1_Score(as.numeric(yvalidation),pred3)
+} 
 
 error0 = mean(error[1,])
 error1 = mean(error[2,])
 error2 = mean(error[3,])
+error3 = mean(error[4,])
 f1_0 = mean(f1[1,])
 f1_1 = mean(f1[2,])
 f1_2 = mean(f1[3,])
 error0
 error1
 error2
+error3
+print("F1 scores")
 f1_0
 f1_1
 f1_2
 ```
+
+[1] 0.0705
+[1] 0.06899
+[1] 0.06767
+[1] 9.041
+[1] 0.9606
+[1] 0.9619
+[1] 0.9626
 
 Calculem les variàncies des errors
 
@@ -308,9 +362,37 @@ F1_Score(as.numeric(ytest),pred_dico[,1],positive = 0)
 ```{r}
 # 11-nn
 nn = knn(scale(xl),scale(xtest),as.factor(yl),k=11)
-F1_Score(as.numeric(ytest),as.numeric(as.logical(nn)))
+pred_nn = as.numeric(as.logical(nn))
+F1_Score(as.numeric(ytest),pred_nn)
 ```
 
+Quines cançons estan mal calssificades per tots els models
+
+```{r}
+index = c()
+for (i in 1:nrow(xtest)){
+  if(pred_nn[i] != ytest[i] && pred_glm[i] != ytest[i] && pred_dico[i,1] != ytest[i]){
+    index = c(index,i)
+  }
+}
+index
+```
+
+```{r}
+x_full[index,c(1,8)]
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
 
 
 
