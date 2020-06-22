@@ -410,4 +410,5 @@ cat("Prediction for Sunflower, Post Malone",pred,", rounding, we get: ",round(pr
  
 ```
 
+22/06/2020 14:12:47, version 6.9.24, SIW developing group.
 

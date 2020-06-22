@@ -1,0 +1,414 @@
+---
+title: "R Notebook"
+output: html_notebook
+authors:
+  Àlex Martí Guiu
+  Marc Fuentes i Oncins
+  Elías Abad Rocamora
+---
+
+Loading the data:
+```{r}
+library("readxl")
+library("class")
+library("rjson")
+library(MASS)
+library(nnet)
+library(caret)
+library(MLmetrics)
+x_raw <- read_excel("./kcmillersean-billboard-hot-100-1958-2017/original/Hot 100 Audio Features.xlsx")
+sum(is.na(x_raw$spotify_track_explicit))
+x_raw
+```
+
+We eliminate the rows where the target variable is missing.
+```{r}
+billboard <- read.csv("./kcmillersean-billboard-hot-100-1958-2017/original/Hot Stuff.csv",header = TRUE)
+billboard
+```
+
+We also eliminate the rows where the regression variables are missing.
+```{r}
+x_full <- x_raw[!is.na(x_raw$danceability),]
+x_full  <- x_full[!is.na(x_full$spotify_track_explicit),]
+sum(is.na(x_full$spotify_track_explicit))
+x_full
+```
+
+Extract target variable and check if there are any NA's.
+```{r}
+explicit <- x_full$spotify_track_explicit
+x <- x_full[,c(9:22)] 
+colnames(x)[1]<-"duration"
+colnames(x)[2]<-"popularity"
+x
+sum(is.na(x))
+```
+
+Delete key and time_signature
+```{r}
+x<-x[,-c(5,14)]
+```
+
+```{r}
+dim(x)
+```
+***Descriptive analysis***
+
+Correlation matrix:
+```{r}
+C <-cor(x)
+C
+```
+
+Highly correlated variables:
+```{r}
+for(i in 1 : (nrow(C) - 1)) {
+  for(j in (i + 1) : ncol(C)) {
+    if(abs(C[i, j]) >= 0.5) print(paste0(rownames(C)[i], " - ", colnames(C)[j]))
+  }
+}
+```
+
+Mean values for explicit and non-explicit songs:
+```{r}
+mu_exp = as.matrix(apply(x[explicit == TRUE,],2,mean))
+mu_exp
+```
+```{r}
+mu_nexp = as.matrix(apply(x[explicit == FALSE,],2,mean))
+mu_nexp
+```
+
+Variance for ecplicit and non-explicit songs
+```{r}
+apply(x[explicit == TRUE,],2,var)
+```
+
+```{r}
+apply(x[explicit == FALSE,],2,var)
+```
+
+Number of observations in every class:
+```{r}
+sum(explicit == FALSE)
+sum(explicit == TRUE)
+```
+
+Histograms of some variables of the two classes  to see the difference in the distribution:
+```{r}
+hist(x$loudness[explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.2))
+hist(x$loudness[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.2))
+```
+
+```{r}
+hist(x$speechiness[explicit == FALSE],freq = FALSE,border = "green")
+hist(x$speechiness[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
+```
+```{r}
+hist(x$danceability[explicit == FALSE],freq = FALSE,border = "green")
+hist(x$danceability[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red")
+```
+```{r}
+hist(x$popularity[explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.05))
+hist(x$popularity[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.05))
+```
+```{r}
+hist(x$valence[explicit == FALSE],freq = FALSE,border = "green")
+hist(x$valence[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red") 
+```
+
+Cluster analysis:
+```{r}
+set.seed(123)
+xstd = scale(x,scale = TRUE)
+c = sample(1:nrow(xstd),1000)
+D = dist(xstd[c,])
+```
+
+
+```{r}
+hc.ward <- hclust(D,method="ward.D2")
+plot(hc.ward,ylab="Distance",main="single linkage (weighted Euclidean)",
+xlab="",hang=-1,las=1,cex.main=1)
+clusters <- cutree(hc.ward, 2)
+table(clusters,explicit[c])
+```
+
+LDA to check that the data is separable:
+```{r}
+# LDA
+
+out <- lda(explicit~.,data=x)
+plot(out)
+```
+
+PCA to check if there is a simple separation:
+```{r}
+pca = princomp(x[c,],cor=TRUE)
+plot(pca$scores[,1],pca$scores[,2],col = ifelse(explicit,"red","blue"),asp = 1)
+```
+
+## Modeling
+
+```{r}
+#función discriminante
+g = function(prior,S_inv,mu,x){
+  x = t(as.matrix(x))
+  g = log(prior) - log((2*pi)^(ncol(S_inv)/2)) -1/2*t(x-mu) %*% S_inv %*% (x-mu)
+  return(g)
+}
+
+dichotomizer = function(xx,prior_exp,prior_nexp,S_exp_inv,S_nexp_inv,mu_exp,mu_nexp){
+    class = rep(0, nrow(xx))
+    for (i in 1:nrow(xx)){
+        dico = g(prior_exp,S_exp_inv,mu_exp,xx[i,])-g(prior_nexp,S_nexp_inv,mu_nexp,xx[i,])
+        if (dico > 0) class[i] = 1 
+    }
+    return(class)
+} 
+
+Error = function(y_true,y_pred,n){
+   return(sum((y_true-y_pred)^2)/n)
+}
+```
+
+We divide the dataset into training and test:
+```{r}
+set.seed (4321)
+N <- nrow(x)
+learn <- sample(1:N, round(0.67*N))
+xl = x[learn,]
+yl = explicit[learn]
+xtest = x[-learn,]
+ytest = explicit[-learn]
+```
+
+We choose the best k for k-nn with cross-validation.
+Takes a lot of time to execute, so we keep it commented.
+```{r}
+# 88 = round(sqrt(nrow(xtest)))
+#c = rep(0,88)
+#i=1
+#while (i < 88){
+#  nn = knn(scale(xl),scale(xtest),as.factor(yl),k=i)
+#  sum(nn == "TRUE")
+#  c[i] = Error(ytest,as.logical(nn),nrow(xtest))
+#  i = i + 2
+#  }
+#which(c == min(c[c!=0]))
+
+```
+
+The best value for k is k = 11.
+
+```{r}
+#training and test errors for the MLP
+errors <- function (model)
+{
+  options(digits=4)
+  p1 <- as.factor(predict (model, type="class"))
+  t1 <- table(p1,explicit[learn])
+  cat ("Train = ", 100*(1-sum(diag(t1))/length(explicit[learn])),"%\n")
+  p2 <- as.factor(predict (model, newdata=xtest, type="class"))
+  t2 <- table(p2,explicit[-learn])
+  cat ("Test =  ", 100*(1-sum(diag(t2))/length(explicit[-learn])),"%\n")
+}
+```
+
+Cross validation to check which is the best value for the decay in our NN.
+Also takes a lot of time so we comment it.
+```{r}
+#set.seed(1234)
+# model.nnet <- nnet(explicit ~., data = x, entropy = TRUE, softmax = FALSE, linout = FALSE, subset=learn, size=10, maxit=500, decay=0.5)
+#x_aux = x
+#x_aux$explicit = explicit
+#(decays <- 10^seq(-2, 0, by=0.2))
+#trc <- trainControl (method="repeatedcv", number=10, repeats=1)
+#model.10x10CV <- train (as.factor(explicit) ~ ., data = x_aux, subset=learn, method='nnet', 
+#                        maxit = 200, trace = FALSE
+#                        tuneGrid = expand.grid(.size=20,.decay=decays), trControl=trc)
+
+```
+
+```{r}
+#model.10x10CV$results
+```
+
+The best decay is 0.398 ~ 0.4.
+
+# 10-fold Cross Validation for model choosing
+
+```{r}
+k=10
+error = matrix(, nrow = 4, ncol = 10)
+f1 = matrix(, nrow = 3, ncol = 10)
+fold_size = nrow(xl) %/% k
+for (i in 1:k){
+    #Definim els talls que definiran els folds
+    init = (i-1)*fold_size
+    if(i == 10){
+    end = nrow(xl)
+    }else{
+    end = init + fold_size
+    }
+    xtraining = xl[-c(init:end),]
+    ytraining = yl[-c(init:end)]
+    xvalidation = xl[c(init:end),]
+    yvalidation = yl[c(init:end)]
+    
+    #Model1: dichotomizer assuming MVN:
+    # Creem el dichotomizer
+    # Primer creem les funcions discriminants
+    prior_exp = sum(ytraining == TRUE)/nrow(xtraining)
+    prior_nexp = 1 - prior_exp
+    S_exp = cov(xtraining[ytraining == TRUE,])
+    S_nexp = cov(xtraining[ytraining == FALSE,])
+    S_exp_inv = solve(S_exp)
+    S_nexp_inv = solve(S_nexp)
+    prediction0 = dichotomizer(xvalidation,prior_exp,prior_nexp,S_exp_inv,S_nexp_inv,mu_exp,mu_nexp)
+    error[1,i] =  Error(as.numeric(yvalidation),prediction0,nrow(xvalidation))
+    f1[1,i] = F1_Score(as.numeric(yvalidation),prediction0)
+    
+    #Model2: glm with binomial family
+    mod1 <- glm(ytraining ~ ., data=as.data.frame(xtraining),family=binomial)
+    prediction1 = round(predict(mod1,ty="response",
+    newdata = as.data.frame(xvalidation)))
+    error[2,i] = Error(as.numeric(yvalidation),prediction1,nrow(xvalidation))
+    f1[2,i] = F1_Score(as.numeric(yvalidation),prediction1)
+    
+    #Model3: knn
+    k_knn = 11 #escollida a fora
+    nn = knn(scale(xtraining),scale(xvalidation),as.factor(ytraining),k=k_knn)
+    error[3,i] = Error(yvalidation,as.logical(nn),nrow(xvalidation))
+    f1[3,i] = F1_Score(as.numeric(yvalidation),as.numeric(as.logical(nn)))
+    
+    #Model4: MLP neural network
+    set.seed(1234)
+    mod3 <- nnet(ytraining ~., data = xtraining, entropy = TRUE, softmax = FALSE, linout = FALSE, trace = FALSE, size=20, maxit=500, decay=0.4)
+    options(digits=4)
+    pred3 = round(predict(mod3,ty="raw",
+    newdata = as.data.frame(xvalidation)))
+    error[4,i] = Error(as.numeric(yvalidation),pred3,nrow(xvalidation))
+    #f1[4,i] = F1_Score(as.numeric(yvalidation),pred3)
+} 
+
+error0 = mean(error[1,])
+error1 = mean(error[2,])
+error2 = mean(error[3,])
+error3 = mean(error[4,])
+f1_0 = mean(f1[1,])
+f1_1 = mean(f1[2,])
+f1_2 = mean(f1[3,])
+#f1_3 = mean(f1[4,])
+error0
+error1
+error2
+error3
+print("F1 scores")
+f1_0
+f1_1
+f1_2
+#f1_3
+```
+
+We calculate the error variances.
+```{r}
+vars_errors = apply(error,1,var)
+var_f1 = apply(f1,1,var)
+vars_errors
+var_f1
+```
+
+Sembla que el millor és el knn però per molt poc. També és el que té millor variància
+
+```{r}
+t.test(error[1,],error[2,])
+```
+```{r}
+t.test(error[1,],error[3,])
+```
+
+```{r}
+t.test(error[2,],error[3,])
+```
+
+```{r}
+t.test(error[1,],error[4,])
+```
+```{r}
+t.test(error[2,],error[4,])
+```
+```{r}
+t.test(error[3,],error[4,])
+```
+
+We re-train the chosen model (GLM) with the whole training dataset.
+```{r}
+# glm
+mod <- glm(yl~.,data = as.data.frame(xl),family=binomial(link = "logit"))
+pred_glm = round(predict.glm(mod,type = "response",newdata = as.data.frame(xtest)))
+F1_Score(as.numeric(ytest),pred_glm)
+```
+
+Which songs are misclassified:
+```{r}
+index = c()
+for (i in 1:nrow(xtest)){
+  if(pred_glm[i] != ytest[i]){
+    index = c(index,i)
+  }
+}
+```
+
+```{r}
+x_full[index,c(1,8)]
+```
+
+Test amb cançons nostres
+Nosaltres introduim la "popularity", que es la unica variable que no ens ofereix la API de Spotify for Developers
+Els fitxers jason han estat directament extrets de Spotify for Developers
+
+Definim un a funcio per llegir i netejar el jason:
+
+```{r}
+spotify_feature_extraction = function(fitxer_json,popularity){
+  song = as.data.frame(fitxer_json)
+  names(song)[names(song) == "duration_ms"] <- "duration"
+  song = cbind(song,popularity)
+  song = song[-c(12,13,14,15,16,18)]
+  return(song)
+}
+```
+ 
+Test per totes les cancçons usant el model glm (mod)
+ 
+```{r}
+# Pigs, Pink Floyd
+pigs = fromJSON(file = "pigs.json")
+pigs2 = spotify_feature_extraction(pigs,40)
+pred = (predict.glm(mod,type = "response",newdata = pigs2))
+cat("Prediction for Pigs, Pink Floyd:",pred,", rounding, we get:",round(pred),"\n")
+ 
+# Say So, Doja Cat
+sayso = fromJSON(file = "sayso.json")
+sayso2 = spotify_feature_extraction(sayso,90)
+pred = (predict.glm(mod,type = "response",newdata = sayso2))
+cat("Prediction for Say So, Doja Cat:",pred,", rounding, we get:",round(pred),"\n")
+ 
+# Rockstar, Da Baby
+rockstar = fromJSON(file = "rockstar.json")
+rockstar2 = spotify_feature_extraction(rockstar,95)
+pred = (predict.glm(mod,type = "response",newdata = rockstar2))
+cat("Prediction for Rockstar, Da Baby:",pred,", rounding, we get:",round(pred),"\n")
+ 
+# Sunflower, Post Malone
+sunflower = fromJSON(file = "sunflower.json")
+sunflower2 = spotify_feature_extraction(sunflower,85)
+pred = (predict.glm(mod,type = "response",newdata = sunflower2))
+cat("Prediction for Sunflower, Post Malone",pred,", rounding, we get: ",round(pred),"\n")
+ 
+```
+
+22/06/2020 14:12:47, version 6.9.24, SIW developing group.
+
