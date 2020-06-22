@@ -3,24 +3,31 @@ title: "R Notebook"
 output: html_notebook
 authors:
   Àlex Martí Guiu
+  Marc Fuentes i Oncins
+  Elías Abad Rocamora
 ---
 
-
+Loading the data:
 ```{r}
 library("readxl")
 library("class")
+library("rjson")
+library(MASS)
+library(nnet)
+library(caret)
+library(MLmetrics)
 x_raw <- read_excel("./kcmillersean-billboard-hot-100-1958-2017/original/Hot 100 Audio Features.xlsx")
 sum(is.na(x_raw$spotify_track_explicit))
 x_raw
 ```
-We eliminate the rows where the target variable is missing.
 
+We eliminate the rows where the target variable is missing.
 ```{r}
 billboard <- read.csv("./kcmillersean-billboard-hot-100-1958-2017/original/Hot Stuff.csv",header = TRUE)
 billboard
 ```
 
-
+We also eliminate the rows where the regression variables are missing.
 ```{r}
 x_full <- x_raw[!is.na(x_raw$danceability),]
 x_full  <- x_full[!is.na(x_full$spotify_track_explicit),]
@@ -28,6 +35,7 @@ sum(is.na(x_full$spotify_track_explicit))
 x_full
 ```
 
+Extract target variable and check if there are any NA's.
 ```{r}
 explicit <- x_full$spotify_track_explicit
 x <- x_full[,c(9:22)] 
@@ -36,9 +44,8 @@ colnames(x)[2]<-"popularity"
 x
 sum(is.na(x))
 ```
-We have to see what to do with mode and time_signature.
 
-Quitar key y time_signature
+Delete key and time_signature
 ```{r}
 x<-x[,-c(5,14)]
 ```
@@ -46,16 +53,15 @@ x<-x[,-c(5,14)]
 ```{r}
 dim(x)
 ```
+***Descriptive analysis***
 
-```{r}
-# pairs(x[,1:6],col = ifelse(explicit,"red","blue"))
-```
-
+Correlation matrix:
 ```{r}
 C <-cor(x)
 C
 ```
 
+Highly correlated variables:
 ```{r}
 for(i in 1 : (nrow(C) - 1)) {
   for(j in (i + 1) : ncol(C)) {
@@ -64,17 +70,17 @@ for(i in 1 : (nrow(C) - 1)) {
 }
 ```
 
-
+Mean values for explicit and non-explicit songs:
 ```{r}
 mu_exp = as.matrix(apply(x[explicit == TRUE,],2,mean))
 mu_exp
 ```
-
 ```{r}
 mu_nexp = as.matrix(apply(x[explicit == FALSE,],2,mean))
 mu_nexp
 ```
 
+Variance for ecplicit and non-explicit songs
 ```{r}
 apply(x[explicit == TRUE,],2,var)
 ```
@@ -83,17 +89,16 @@ apply(x[explicit == TRUE,],2,var)
 apply(x[explicit == FALSE,],2,var)
 ```
 
-Asumim que les variancies son diferents (s'hauria de fer box m test)
-
+Number of observations in every class:
 ```{r}
 sum(explicit == FALSE)
 sum(explicit == TRUE)
 ```
+
+Histograms of some variables of the two classes  to see the difference in the distribution:
 ```{r}
 hist(x$loudness[explicit == FALSE],freq = FALSE,border = "green",ylim = c(0,0.2))
 hist(x$loudness[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red",ylim = c(0,0.2))
-
-
 ```
 
 ```{r}
@@ -113,8 +118,7 @@ hist(x$valence[explicit == FALSE],freq = FALSE,border = "green")
 hist(x$valence[explicit == TRUE],freq = FALSE,add  = TRUE,border = "red") 
 ```
 
-Fem un ànalisi cluster
-
+Cluster analysis:
 ```{r}
 set.seed(123)
 xstd = scale(x,scale = TRUE)
@@ -131,27 +135,24 @@ clusters <- cutree(hc.ward, 2)
 table(clusters,explicit[c])
 ```
 
-Fem un ànalisi lda i veiem l'output de una primera classificació
-
+LDA to check that the data is separable:
 ```{r}
 # LDA
-library(MASS)
+
 out <- lda(explicit~.,data=x)
 plot(out)
 ```
 
-
+PCA to check if there is a simple separation:
 ```{r}
-# PCA no separa
 pca = princomp(x[c,],cor=TRUE)
 plot(pca$scores[,1],pca$scores[,2],col = ifelse(explicit,"red","blue"),asp = 1)
 ```
 
-## Classificació
-
-ara ens falta fer learn + test i cross validation
+## Modeling
 
 ```{r}
+#función discriminante
 g = function(prior,S_inv,mu,x){
   x = t(as.matrix(x))
   g = log(prior) - log((2*pi)^(ncol(S_inv)/2)) -1/2*t(x-mu) %*% S_inv %*% (x-mu)
@@ -167,22 +168,12 @@ dichotomizer = function(xx,prior_exp,prior_nexp,S_exp_inv,S_nexp_inv,mu_exp,mu_n
     return(class)
 } 
 
-F1 = function(y_true,y_pred){
-    positives = c(y_true == 1)
-    true_positives = sum(positives) - sum((y_true[positives] - y_pred[positives])^2)
-    prec = true_positives/sum(y_pred == 1)
-    recall = true_positives/sum(y_true == 1)
-    F1 = 2*(prec*recall)/(prec+recall)
-    return (F1)
-}
-
 Error = function(y_true,y_pred,n){
    return(sum((y_true-y_pred)^2)/n)
 }
 ```
 
-Definim els datasets de Learn i Test a partir del dataset inicial
-
+We divide the dataset into training and test:
 ```{r}
 set.seed (4321)
 N <- nrow(x)
@@ -193,25 +184,26 @@ xtest = x[-learn,]
 ytest = explicit[-learn]
 ```
 
-Escollim quina és la millor k
-
+We choose the best k for k-nn with cross-validation.
+Takes a lot of time to execute, so we keep it commented.
 ```{r}
 # 88 = round(sqrt(nrow(xtest)))
-c = rep(0,88)
-i=1
-while (i < 88){
-  nn = knn(scale(xl),scale(xtest),as.factor(yl),k=i)
-  sum(nn == "TRUE")
-  c[i] = Error(ytest,as.logical(nn),nrow(xtest))
-  i = i + 2
-  }
-which(c == min(c[c!=0]))
-'''
+#c = rep(0,88)
+#i=1
+#while (i < 88){
+#  nn = knn(scale(xl),scale(xtest),as.factor(yl),k=i)
+#  sum(nn == "TRUE")
+#  c[i] = Error(ytest,as.logical(nn),nrow(xtest))
+#  i = i + 2
+#  }
+#which(c == min(c[c!=0]))
+
 ```
 
-La millor k és k=11
+The best value for k is k = 11.
 
 ```{r}
+#training and test errors for the MLP
 errors <- function (model)
 {
   options(digits=4)
@@ -224,36 +216,30 @@ errors <- function (model)
 }
 ```
 
-
+Cross validation to check which is the best value for the decay in our NN.
+Also takes a lot of time so we comment it.
 ```{r}
-set.seed(1234)
-library(MASS)
-library(nnet)
-
+#set.seed(1234)
 # model.nnet <- nnet(explicit ~., data = x, entropy = TRUE, softmax = FALSE, linout = FALSE, subset=learn, size=10, maxit=500, decay=0.5)
-library(caret)
-x_aux = x
-x_aux$explicit = explicit
-(decays <- 10^seq(-2, 0, by=0.2))
-trc <- trainControl (method="repeatedcv", number=10, repeats=1)
-model.10x10CV <- train (as.factor(explicit) ~ ., data = x_aux, subset=learn, method='nnet', 
-                        maxit = 200, trace = FALSE
-                        tuneGrid = expand.grid(.size=20,.decay=decays), trControl=trc)
+#x_aux = x
+#x_aux$explicit = explicit
+#(decays <- 10^seq(-2, 0, by=0.2))
+#trc <- trainControl (method="repeatedcv", number=10, repeats=1)
+#model.10x10CV <- train (as.factor(explicit) ~ ., data = x_aux, subset=learn, method='nnet', 
+#                        maxit = 200, trace = FALSE
+#                        tuneGrid = expand.grid(.size=20,.decay=decays), trControl=trc)
 
 ```
 
 ```{r}
-model.10x10CV$results
+#model.10x10CV$results
 ```
 
-El millor decay es 0.398 ~ 0.4
+The best decay is 0.398 ~ 0.4.
 
-# Cross Validation
-
-Fem la 10-fold Cross-Validation per escollir el millor model
+# 10-fold Cross Validation for model choosing
 
 ```{r}
-library(MLmetrics)
 k=10
 error = matrix(, nrow = 4, ncol = 10)
 f1 = matrix(, nrow = 3, ncol = 10)
@@ -271,7 +257,7 @@ for (i in 1:k){
     xvalidation = xl[c(init:end),]
     yvalidation = yl[c(init:end)]
     
-    #Model0: dichotomizer assuming MVN:
+    #Model1: dichotomizer assuming MVN:
     # Creem el dichotomizer
     # Primer creem les funcions discriminants
     prior_exp = sum(ytraining == TRUE)/nrow(xtraining)
@@ -284,20 +270,20 @@ for (i in 1:k){
     error[1,i] =  Error(as.numeric(yvalidation),prediction0,nrow(xvalidation))
     f1[1,i] = F1_Score(as.numeric(yvalidation),prediction0)
     
-    #Model1: glm with binomial family
+    #Model2: glm with binomial family
     mod1 <- glm(ytraining ~ ., data=as.data.frame(xtraining),family=binomial)
     prediction1 = round(predict(mod1,ty="response",
     newdata = as.data.frame(xvalidation)))
     error[2,i] = Error(as.numeric(yvalidation),prediction1,nrow(xvalidation))
     f1[2,i] = F1_Score(as.numeric(yvalidation),prediction1)
     
-    #Model2: knn
+    #Model3: knn
     k_knn = 11 #escollida a fora
     nn = knn(scale(xtraining),scale(xvalidation),as.factor(ytraining),k=k_knn)
     error[3,i] = Error(yvalidation,as.logical(nn),nrow(xvalidation))
     f1[3,i] = F1_Score(as.numeric(yvalidation),as.numeric(as.logical(nn)))
     
-    #Model3: MLP neural network
+    #Model4: MLP neural network
     set.seed(1234)
     mod3 <- nnet(ytraining ~., data = xtraining, entropy = TRUE, softmax = FALSE, linout = FALSE, trace = FALSE, size=20, maxit=500, decay=0.4)
     options(digits=4)
@@ -326,16 +312,7 @@ f1_2
 #f1_3
 ```
 
-[1] 0.0705
-[1] 0.06899
-[1] 0.06767
-[1] 9.041
-[1] 0.9606
-[1] 0.9619
-[1] 0.9626
-
-Calculem les variàncies des errors
-
+We calculate the error variances.
 ```{r}
 vars_errors = apply(error,1,var)
 var_f1 = apply(f1,1,var)
@@ -344,34 +321,6 @@ var_f1
 ```
 
 Sembla que el millor és el knn però per molt poc. També és el que té millor variància
-
-Ara reentrenem per tot el dataset de learn
-
-```{r}
-# glm
-mod <- glm(yl~.,data = as.data.frame(xl),family=binomial(link = "logit"))
-pred_glm = round(predict.glm(mod,type = "response",newdata = as.data.frame(xtest)))
-F1_Score(as.numeric(ytest),pred_glm)
-```
-
-```{r}
-# dichotomizer
-prior_exp = sum(yl == TRUE)/nrow(xl)
-prior_nexp = 1 - prior_exp
-S_exp = cov(xl[yl == TRUE,])
-S_nexp = cov(xl[yl == FALSE,])
-S_exp_inv = solve(S_exp)
-S_nexp_inv = solve(S_nexp)
-pred_dico = as.data.frame(dichotomizer(xtest,prior_exp,prior_nexp,S_exp_inv,S_nexp_inv,mu_exp,mu_nexp))
-F1_Score(as.numeric(ytest),pred_dico[,1],positive = 0)
-```
-
-```{r}
-# 11-nn
-nn = knn(scale(xl),scale(xtest),as.factor(yl),k=11)
-pred_nn = as.numeric(as.logical(nn))
-F1_Score(as.numeric(ytest),pred_nn)
-```
 
 ```{r}
 t.test(error[1,],error[2,])
@@ -394,12 +343,19 @@ t.test(error[2,],error[4,])
 t.test(error[3,],error[4,])
 ```
 
-Quines cançons estan mal calssificades per tots els models
+We re-train the chosen model (GLM) with the whole training dataset.
+```{r}
+# glm
+mod <- glm(yl~.,data = as.data.frame(xl),family=binomial(link = "logit"))
+pred_glm = round(predict.glm(mod,type = "response",newdata = as.data.frame(xtest)))
+F1_Score(as.numeric(ytest),pred_glm)
+```
 
+Which songs are misclassified:
 ```{r}
 index = c()
 for (i in 1:nrow(xtest)){
-  if(pred_nn[i] != ytest[i] && pred_glm[i] != ytest[i] && pred_dico[i,1] != ytest[i]){
+  if(pred_glm[i] != ytest[i]){
     index = c(index,i)
   }
 }
@@ -409,13 +365,6 @@ for (i in 1:nrow(xtest)){
 x_full[index,c(1,8)]
 ```
 
-```{r}
-xs_weird = scale(x[index,])
-w_exp = as.matrix(apply(xs_weird[explicit[index] == TRUE,],2,mean))
-w_nexp = as.matrix(apply(xs_weird[explicit[index] == FALSE,],2,mean))
-```
-
-
 Test amb cançons nostres
 Nosaltres introduim la "popularity", que es la unica variable que no ens ofereix la API de Spotify for Developers
 Els fitxers jason han estat directament extrets de Spotify for Developers
@@ -423,7 +372,6 @@ Els fitxers jason han estat directament extrets de Spotify for Developers
 Definim un a funcio per llegir i netejar el jason:
 
 ```{r}
-library("rjson")
 spotify_feature_extraction = function(fitxer_json,popularity){
   song = as.data.frame(fitxer_json)
   names(song)[names(song) == "duration_ms"] <- "duration"
@@ -438,38 +386,28 @@ Test per totes les cancçons usant el model glm (mod)
 ```{r}
 # Pigs, Pink Floyd
 pigs = fromJSON(file = "pigs.json")
-pigs2 = spotify_feature_extraction(pigs,30)
+pigs2 = spotify_feature_extraction(pigs,40)
 pred = (predict.glm(mod,type = "response",newdata = pigs2))
 cat("Prediction for Pigs, Pink Floyd:",pred,", rounding, we get:",round(pred),"\n")
  
 # Say So, Doja Cat
 sayso = fromJSON(file = "sayso.json")
-sayso2 = spotify_feature_extraction(sayso,98)
+sayso2 = spotify_feature_extraction(sayso,90)
 pred = (predict.glm(mod,type = "response",newdata = sayso2))
 cat("Prediction for Say So, Doja Cat:",pred,", rounding, we get:",round(pred),"\n")
  
 # Rockstar, Da Baby
 rockstar = fromJSON(file = "rockstar.json")
-rockstar2 = spotify_feature_extraction(rockstar,99)
+rockstar2 = spotify_feature_extraction(rockstar,95)
 pred = (predict.glm(mod,type = "response",newdata = rockstar2))
 cat("Prediction for Rockstar, Da Baby:",pred,", rounding, we get:",round(pred),"\n")
  
 # Sunflower, Post Malone
 sunflower = fromJSON(file = "sunflower.json")
-sunflower2 = spotify_feature_extraction(sunflower,90)
+sunflower2 = spotify_feature_extraction(sunflower,85)
 pred = (predict.glm(mod,type = "response",newdata = sunflower2))
 cat("Prediction for Sunflower, Post Malone",pred,", rounding, we get: ",round(pred),"\n")
  
-# Wow, Post Malone
-wow = fromJSON(file = "wow.json")
-wow2 = spotify_feature_extraction(wow,90)
-pred = (predict.glm(mod,type = "response",newdata = wow2))
-cat("Prediction for Wow, Post Malone",pred,", rounding, we get:",round(pred),"\n")
-```
-
-```{r}
-mod3 <- nnet(explicit[learn] ~., data = xl, entropy = TRUE, softmax = FALSE, linout = FALSE, trace = FALSE, size=10, maxit=200, decay=0.5)
-errors(mod3)
 ```
 
 
