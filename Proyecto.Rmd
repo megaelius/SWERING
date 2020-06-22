@@ -1,6 +1,8 @@
 ---
 title: "R Notebook"
 output: html_notebook
+authors:
+  Àlex Martí Guiu
 ---
 
 
