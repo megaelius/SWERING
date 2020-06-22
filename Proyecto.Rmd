@@ -204,7 +204,10 @@ while (i < 88){
   i = i + 2
   }
 which(c == min(c[c!=0]))
+'''
 ```
+
+La millor k és k=11
 
 ```{r}
 errors <- function (model)
@@ -224,24 +227,24 @@ errors <- function (model)
 set.seed(1234)
 library(MASS)
 library(nnet)
+
 # model.nnet <- nnet(explicit ~., data = x, entropy = TRUE, softmax = FALSE, linout = FALSE, subset=learn, size=10, maxit=500, decay=0.5)
 library(caret)
-
-trc <- trainControl (method="repeatedcv", number=2, repeats=2)
-model.10x10CV <- train (as.factor(explicit) ~., data = x, subset=learn, method='nnet', 
-                        maxit = 100, trace = FALSE,
+x_aux = x
+x_aux$explicit = explicit
+(decays <- 10^seq(-2, 0, by=0.2))
+trc <- trainControl (method="repeatedcv", number=10, repeats=1)
+model.10x10CV <- train (as.factor(explicit) ~ ., data = x_aux, subset=learn, method='nnet', 
+                        maxit = 200, trace = FALSE
                         tuneGrid = expand.grid(.size=20,.decay=decays), trControl=trc)
-```
 
+```
 
 ```{r}
-# 2561.270023
-errors (model.nnet)
+model.10x10CV$results
 ```
 
-
-
-La millor k és k=11
+El millor decay es 0.398 ~ 0.4
 
 # Cross Validation
 
@@ -294,12 +297,12 @@ for (i in 1:k){
     
     #Model3: MLP neural network
     set.seed(1234)
-    mod3 <- nnet(ytraining ~., data = xtraining, entropy = TRUE, softmax = FALSE, linout = FALSE, size=10, maxit=500, decay=0.5)
+    mod3 <- nnet(ytraining ~., data = xtraining, entropy = TRUE, softmax = FALSE, linout = FALSE, trace = FALSE, size=20, maxit=500, decay=0.4)
     options(digits=4)
     pred3 = round(predict(mod3,ty="raw",
     newdata = as.data.frame(xvalidation)))
     error[4,i] = Error(as.numeric(yvalidation),pred3,nrow(xvalidation))
-    # f1[4,i] = F1_Score(as.numeric(yvalidation),pred3)
+    #f1[4,i] = F1_Score(as.numeric(yvalidation),pred3)
 } 
 
 error0 = mean(error[1,])
@@ -309,6 +312,7 @@ error3 = mean(error[4,])
 f1_0 = mean(f1[1,])
 f1_1 = mean(f1[2,])
 f1_2 = mean(f1[3,])
+#f1_3 = mean(f1[4,])
 error0
 error1
 error2
@@ -317,6 +321,7 @@ print("F1 scores")
 f1_0
 f1_1
 f1_2
+#f1_3
 ```
 
 [1] 0.0705
@@ -377,6 +382,16 @@ t.test(error[1,],error[3,])
 t.test(error[2,],error[3,])
 ```
 
+```{r}
+t.test(error[1,],error[4,])
+```
+```{r}
+t.test(error[2,],error[4,])
+```
+```{r}
+t.test(error[3,],error[4,])
+```
+
 Quines cançons estan mal calssificades per tots els models
 
 ```{r}
@@ -386,7 +401,6 @@ for (i in 1:nrow(xtest)){
     index = c(index,i)
   }
 }
-index
 ```
 
 ```{r}
@@ -394,16 +408,66 @@ x_full[index,c(1,8)]
 ```
 
 ```{r}
+xs_weird = scale(x[index,])
+w_exp = as.matrix(apply(xs_weird[explicit[index] == TRUE,],2,mean))
+w_nexp = as.matrix(apply(xs_weird[explicit[index] == FALSE,],2,mean))
+```
 
+
+Test amb cançons nostres
+Nosaltres introduim la "popularity", que es la unica variable que no ens ofereix la API de Spotify for Developers
+Els fitxers jason han estat directament extrets de Spotify for Developers
+
+Definim un a funcio per llegir i netejar el jason:
+
+```{r}
+library("rjson")
+spotify_feature_extraction = function(fitxer_json,popularity){
+  song = as.data.frame(fitxer_json)
+  names(song)[names(song) == "duration_ms"] <- "duration"
+  song = cbind(song,popularity)
+  song = song[-c(12,13,14,15,16,18)]
+  return(song)
+}
+```
+ 
+Test per totes les cancçons usant el model glm (mod)
+ 
+```{r}
+# Pigs, Pink Floyd
+pigs = fromJSON(file = "pigs.json")
+pigs2 = spotify_feature_extraction(pigs,30)
+pred = (predict.glm(mod,type = "response",newdata = pigs2))
+cat("Prediction for Pigs, Pink Floyd:",pred,", rounding, we get:",round(pred),"\n")
+ 
+# Say So, Doja Cat
+sayso = fromJSON(file = "sayso.json")
+sayso2 = spotify_feature_extraction(sayso,98)
+pred = (predict.glm(mod,type = "response",newdata = sayso2))
+cat("Prediction for Say So, Doja Cat:",pred,", rounding, we get:",round(pred),"\n")
+ 
+# Rockstar, Da Baby
+rockstar = fromJSON(file = "rockstar.json")
+rockstar2 = spotify_feature_extraction(rockstar,99)
+pred = (predict.glm(mod,type = "response",newdata = rockstar2))
+cat("Prediction for Rockstar, Da Baby:",pred,", rounding, we get:",round(pred),"\n")
+ 
+# Sunflower, Post Malone
+sunflower = fromJSON(file = "sunflower.json")
+sunflower2 = spotify_feature_extraction(sunflower,90)
+pred = (predict.glm(mod,type = "response",newdata = sunflower2))
+cat("Prediction for Sunflower, Post Malone",pred,", rounding, we get: ",round(pred),"\n")
+ 
+# Wow, Post Malone
+wow = fromJSON(file = "wow.json")
+wow2 = spotify_feature_extraction(wow,90)
+pred = (predict.glm(mod,type = "response",newdata = wow2))
+cat("Prediction for Wow, Post Malone",pred,", rounding, we get:",round(pred),"\n")
 ```
 
 ```{r}
-
+mod3 <- nnet(explicit[learn] ~., data = xl, entropy = TRUE, softmax = FALSE, linout = FALSE, trace = FALSE, size=10, maxit=200, decay=0.5)
+errors(mod3)
 ```
-
-```{r}
-
-```
-
 
 
